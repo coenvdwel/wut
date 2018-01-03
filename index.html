@@ -1,0 +1,228 @@
+<!doctype html>
+<html>
+	<head>
+		<meta charset="utf-8">
+		<meta http-equiv="Content-Type" content="text/html">
+		<link rel="shortcut icon" href="favicon.ico" type="image/x-icon" />
+		
+		<title>Wut</title>
+		
+		<link rel="stylesheet" type="text/css" href="css/styles.css">
+		<script type="text/javascript" src="js/jquery-1.10.2.min.js"></script>
+		
+		<script type="text/javascript">
+			$(function()
+			{
+				$("document").ready(function()
+				{
+					var getAuth = new RegExp("[\?&]auth=([^&#]*)").exec(window.location.href);
+					if(getAuth)
+					{
+						getAuth = atob(getAuth[1]).split(":");
+						
+						$("#username").val(getAuth[0]);
+						$("#password").val(getAuth[1]);
+						$("#submit").click();
+					}
+				}); 
+				
+				$("#submit").on("click", function(e)
+				{
+					e.preventDefault();
+					$("#data").html("<div id=\"loader\"><img src=\"css/loader.gif\" alt=\"loading...\"></div>");
+					
+					var main = "diract-it";
+					var username = $("#username").val();
+					var password = $("#password").val();
+					var repo = $("#repo").val();
+					
+					var getAuth = new RegExp("[\?&]auth=([^&#]*)").exec(window.location.href);
+					var link = window.location.href + ((getAuth == null) ? "?auth=" + btoa(username + ":" + password) : "");
+					$("#auth").attr("href", link);
+					$("#auth").text(link);
+					
+					request({ uri: "https://api.github.com/repos/{0}/{1}/branches?per_page=100".uri(main, repo), password: password }, function(mbs)
+					{
+						if(mbs == null)
+						{
+							$("#data").html("<h2>Github down? Wut?</h2>");
+							return;
+						}
+						
+						if(mbs.message != null)
+						{
+							$("#data").html("<h2>"+mbs.message+"</h2>");
+							return;
+						}
+						
+						var branches = [];
+						mbs.forEach(function(mb, i)
+						{
+							branches.push(mb.name);
+						});
+						
+						request({ uri: "https://api.github.com/repos/{0}/{1}/branches?per_page=100".uri(username, repo), password: password }, function(bs)
+						{
+							var results = [];
+							var requests = bs.length;
+							
+							bs.forEach(function(b, i)
+							{
+								if(branches.indexOf(b.name) < 0)
+								{
+									results.push(
+									{
+										branch: b.name,
+										status: "offline"
+									});
+									
+									requests--;
+									if(requests <= 0) render(results, username, main, repo);
+									
+									return;
+								}
+								
+								var compareParams =
+								{
+									uri: "https://api.github.com/repos/{0}/{1}/compare/{2}...{3}:{2}".uri(main, repo, b.name, username),
+									password: password,
+									data: b.name
+								};
+								
+								request(compareParams, function(compare, data)
+								{
+									results.push(
+									{
+										branch: data,
+										status: compare.status,
+										by: compare.ahead_by == 0 ? compare.behind_by : compare.ahead_by
+									});
+									
+									requests--;
+									if(requests <= 0) render(results, username, main, repo);
+								});
+							});
+						});
+					});
+				});
+
+				function request(params, callback)
+				{
+					$.ajax({
+						url: params.uri,
+						headers: {
+							"Authorization": "Basic " + params.password
+						},
+						complete: function(xhr)
+						{
+							callback.call(null, xhr.responseJSON, params.data);
+						}
+					});
+				}
+				
+				String.prototype.uri = function()
+				{
+					var s = this, i = arguments.length;
+					while (i--) s = s.replace(new RegExp('\\{' + i + '\\}', 'gm'), encodeURIComponent(arguments[i]));
+					return s;
+				};
+				
+				function render(results, username, main, repo)
+				{
+					var stats =
+					{
+						ahead:
+						{
+							color: "#ff9999",
+							link: function(branch)
+							{
+								return "<a href=\"https://github.com/{0}/{1}/compare/{2}...{3}:{2}?expand=1\">Create PR</a>".uri(main, repo, branch, username);
+							}
+						},
+						diverged:
+						{
+							color: "#ff3333",
+							link: function(branch)
+							{
+								return "<a href=\"https://github.com/{0}/{1}/compare/{2}...{3}:{2}?expand=1\">Create PR</a>".uri(main, repo, branch, username);
+							}
+						},
+						behind:
+						{
+							color: "#add8e6",
+							link: function()
+							{
+								return "Pull!";
+							}
+						},
+						identical:
+						{
+							color: "#99ff99"
+						},
+						offline:
+						{
+							color: "#eee",
+							link: function(branch)
+							{
+								return "<a href=\"https://github.com/{0}/{1}/branches/all?query={2}\">Delete</a>".uri(username, repo, branch);
+							}
+						}
+					};
+					
+					results.sort(function compare(a, b)
+					{
+						if(a.status > b.status) return 1;
+						if(a.status < b.status) return -1;
+						if(a.branch > b.branch) return 1;
+						if(a.branch < b.branch) return -1;
+						return 0;
+					});
+					
+					var lastStatus = "";
+					var output = "";
+					
+					results.forEach(function(r, i)
+					{
+						var status = stats[r.status];
+						if(lastStatus != r.status)
+						{
+							lastStatus = r.status;
+							output += "<h2>"+lastStatus+"</h2>";
+						}
+						
+						output += "<div class=\"branch\">";
+						output += "  <span class=\"status\" title=\""+r.branch+"\" style=\"background-color: "+status.color+"\">"+r.branch+"</span>";
+						if(status.link) output += "  <span class=\"link\">"+status.link(r.branch)+"</span>\n";
+						if(r.by) output += " <span class=\"info\">by "+r.by+" commit"+(r.by > 1?"s":"")+"</span>";
+						output += "  <br class=\"clear\">";
+						output += "</div>";
+					});
+					
+					$("#data").html(output);
+				}
+			});
+		</script>
+	</head>
+
+	<body>
+	
+		<div id="header"><a id="auth" href="#">#</a></div>
+		
+		<div id="container">
+			
+			<h1>Wut</h1>
+			
+			<form>
+				<input type="text" name="repo" id="repo" placeholder="Github repo" value="ceyenne-wms">
+				<input type="text" name="username" id="username" placeholder="Github username">
+				<input type="password" name="password" id="password" placeholder="Github APIkey">
+				<input type="submit" id="submit" value="Get" />
+			</form>
+			
+			<div id="data"></div>
+			<div id="footer">Coen Software B.V.</div>
+			
+		</div>
+		
+	</body>
+</html>
