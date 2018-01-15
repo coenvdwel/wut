@@ -37,11 +37,13 @@
 					var repo = $("#repo").val();
 					
 					var getAuth = new RegExp("[\?&]auth=([^&#]*)").exec(window.location.href);
-					var link = window.location.href + ((getAuth == null) ? "?auth=" + btoa(username + ":" + password) : "");
+					var auth = btoa(username + ":" + password);
+					var link = window.location.href + ((getAuth == null) ? "?auth=" + auth : "");
+					
 					$("#auth").attr("href", link);
 					$("#auth").text(link);
 					
-					request({ uri: "https://api.github.com/repos/{0}/{1}/branches?per_page=100".uri(main, repo), password: password }, function(mbs)
+					request({ uri: "https://api.github.com/repos/{0}/{1}/branches?per_page=100".uri(main, repo), auth: auth }, function(mbs)
 					{
 						if(mbs == null)
 						{
@@ -61,7 +63,7 @@
 							branches.push(mb.name);
 						});
 						
-						request({ uri: "https://api.github.com/repos/{0}/{1}/branches?per_page=100".uri(username, repo), password: password }, function(bs)
+						request({ uri: "https://api.github.com/repos/{0}/{1}/branches?per_page=100".uri(username, repo), auth: auth }, function(bs)
 						{
 							var results = [];
 							var requests = bs.length;
@@ -85,7 +87,7 @@
 								var compareParams =
 								{
 									uri: "https://api.github.com/repos/{0}/{1}/compare/{2}...{3}:{2}".uri(main, repo, b.name, username),
-									password: password,
+									auth: auth,
 									data: b.name
 								};
 								
@@ -111,7 +113,7 @@
 					$.ajax({
 						url: params.uri,
 						headers: {
-							"Authorization": "Basic " + params.password
+							"Authorization": "Basic " + params.auth
 						},
 						complete: function(xhr)
 						{
